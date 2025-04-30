@@ -6,7 +6,7 @@ A web-based prototype for exploring a curated digital archive of photographic as
 This web app displays a photo gallery fetched from a Digital Asset Manager.
 
 ## Authentication: 
-When the page loads, a form prompts the user to enter a secret code. Upon submission (`startApp` function), the code attempts to start a user session with the Kaltura DAM using the `session.start` method. If successful, a `sessionKey` is obtained.
+When the page loads, a form prompts the user to enter a secret code. Upon submission (`startApp` function), the code attempts to start a user session with the DAM using the `session.start` method. If successful, a `sessionKey` is obtained.
 
 ## Fetching Photo Gallery Data: 
 The `getCategoryEntries` function then retrieves the photo metadata from the DAM. It uses the following API methods:
