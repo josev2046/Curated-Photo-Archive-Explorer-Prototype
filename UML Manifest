@@ -1,0 +1,73 @@
+@startuml
+participant "Página HTML" as Pagina
+participant "JavaScript" as JS
+participant "API del DAM" as DAM_API
+
+Pagina -> JS: startApp()
+note right of JS: El usuario introduce su código secreto.
+alt Código Secreto Válido
+    JS -> JS: Init Content
+    note right of JS: Prepara el área de visualización del contenido.
+    JS -> JS: getMediaList()
+    note right of JS: Inicia la obtención de los metadatos de los medios.
+    JS -> DAM_API: Start Session -->> JS: sessionToken
+    note right of DAM_API: Autentica al usuario y devuelve el token de sesión.
+    JS -> DAM_API: Get Media Count -->> JS: totalMediaCount
+    note right of DAM_API: Solicita el número total de medios (fotos).
+    loop Get Media Details
+        JS -> DAM_API: Get Media List -->> JS: mediaEntries
+        note right of DAM_API: Obtiene un lote de metadatos de los medios (incluyendo URLs de miniaturas e IDs).
+        JS -> JS: Store & Filter
+        note right of JS: Procesa y almacena los metadatos recibidos.
+    end
+    JS -> Pagina: displayThumbnailsGrid()
+    note right of JS: Actualiza el HTML para mostrar las miniaturas con sus nombres.
+    Pagina -> Pagina: Show Gallery
+    note right of Pagina: El usuario ve la galería de miniaturas inicial.
+
+    Pagina -> JS: showMedia(mediaId)
+    note right of JS: El usuario hace clic en una miniatura.
+    JS -> JS: Set Current Media ID
+    note right of JS: Almacena el ID del medio seleccionado.
+    JS -> JS: embedMediaPlayer(mediaId)
+    note right of JS: Crea y configura el elemento para visualizar el medio (e.g., iframe, video tag).
+    JS -> Pagina: Embed Media Player
+    note right of Pagina: Añade el elemento del reproductor al HTML.
+    JS -> JS: updateNavigationControls()
+    note right of JS: Activa/desactiva los controles de navegación ('Anterior', 'Siguiente').
+    Pagina -> Pagina: Show Media Player
+    note right of Pagina: El usuario ve el reproductor del medio integrado.
+
+    group Navegación
+        alt Anterior
+            Pagina -> JS: navigateBackward()
+            note right of JS: El usuario hace clic en 'Anterior'.
+            JS -> JS: Get Previous Media ID
+            note right of JS: Obtiene el ID del medio anterior.
+        else Siguiente
+            Pagina -> JS: navigateForward()
+            note right of JS: El usuario hace clic en 'Siguiente'.
+            JS -> JS: Get Next Media ID
+            note right of JS: Obtiene el ID del medio siguiente.
+        end
+        JS -> JS: embedMediaPlayer(currentMediaId)
+        note right of JS: Actualiza el reproductor con el ID del nuevo medio.
+        JS -> Pagina: Update Media Player
+        note right of Pagina: Cambia la fuente o el contenido del elemento del reproductor.
+        JS -> JS: updateNavigationControls()
+        note right of JS: Ajusta el estado de los controles según el medio actual.
+        Pagina -> Pagina: Show Media
+        note right of Pagina: El usuario ve el medio anterior o siguiente.
+    end
+
+    Pagina -> JS: showThumbnailsGrid()
+    note right of JS: El usuario hace clic en 'Volver a la Galería'.
+    Pagina -> Pagina: Show Gallery
+    note right of Pagina: Se muestra de nuevo la galería de miniaturas.
+else Código Secreto Inválido
+    JS -> Pagina: Display Error
+    note right of JS: Muestra un mensaje de error en la página.
+    Pagina -> Pagina: Show Error
+    note right of Pagina: El usuario ve el mensaje de error.
+end
+@enduml
