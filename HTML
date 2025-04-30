@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>[COLLECTION NAME]</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #credentialsForm {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 300px;
+        }
+        #credentialsForm label {
+            font-weight: bold;
+        }
+        #credentialsForm input[type="text"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        #credentialsForm button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        #photoGrid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); /* Responsive grid */
+            gap: 20px; /* Increased gap for better spacing */
+            margin-top: 20px;
+        }
+        .photo-item {
+            border: 1px solid #ccc;
+            padding: 10px; /* Increased padding */
+            text-align: center;
+            display: flex;
+            flex-direction: column; /* Stack image and text */
+            align-items: center; /* Center items horizontally */
+        }
+        .photo-item img {
+            max-width: 100%;
+            height: auto;
+            margin-bottom: 5px; /* Space between image and text */
+        }
+        .photo-item .entry-name {
+            font-size: 0.9em;
+            word-break: break-word; /* Prevent long names from breaking layout */
+        }
+        #playerContainer {
+            margin-top: 20px;
+            text-align: center;
+        }
+        #assetInfo {
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        #navigationButtons button {
+            padding: 8px 15px;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+        #backButton {
+            margin-top: 10px;
+            padding: 8px 15px;
+            cursor: pointer;
+        }
+        #contentArea {
+            display: none; /* Initially hide the main content area */
+        }
+        #errorDisplay {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h2>[COLLECTION NAME]</h2>
+
+    <div id="credentialsForm">
+        <label for="userSecret">Código:</label>
+        <input type="text" id="userSecret" name="userSecret">
+        <button onclick="startApp()">Submit Secret</button>
+        <div id="errorDisplay"></div>
+    </div>
+
+    <div id="contentArea" style="display:none;">
+        <div id="photoGrid">
+        </div>
+
+        <div id="playerContainer" style="display:none;">
+            <div id="assetInfo"></div>
+            <div id="kalturaPlayer"></div>
+            <div id="navigationButtons">
+                <button id="previousButton" onclick="navigateBackward()" disabled>Previous</button>
+                <button id="nextButton" onclick="navigateForward()" disabled>Next</button>
+            </div>
+            <button id="backButton" onclick="showGrid()">Back to Gallery</button>
+        </div>
+
+        <pre id="result"></pre>
+    </div>
+
+    <script>
+        const configBase = {
+            partnerId: "[YOUR_PARTNER_ID]",
+            serviceUrl: "[YOUR_KALTURA_SERVICE_URL]",
+            uiConfId: "[YOUR_PLAYER_UI_CONF_ID]" // Replace with your desired UI Conf ID for the player
+        };
+
+        let sessionKey = null;
+        let totalPhotos = 0;
+        const curatedPhotoArchiveCategoryId = "[YOUR_CATEGORY_ID]"; // **Confirmed Category ID**
+        let allPhotos = []; // Array to store all retrieved photos
+        let currentUserSecret = null; // To store the user-provided secret
+        let currentPhotoIndex = 0; // To keep track of the currently displayed photo
+
+        async function startSession() {
+            if (!currentUserSecret) {
+                throw new Error("User secret not provided.");
+            }
+            if (sessionKey) return sessionKey;
+            try {
+                const formData = new URLSearchParams({
+                    service: "session",
+                    action: "start",
+                    secret: currentUserSecret,
+                    userId: "[YOUR_USER_IDENTIFIER]",
+                    type: "0", // User session
+                    partnerId: configBase.partnerId,
+                    expiry: "86400", // 24 hours
+                    format: "1" // JSON response
+                });
+
+                const response = await fetch(configBase.serviceUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: formData.toString()
+                });
+
+                if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+                sessionKey = await response.text().then(text => text.replace(/^"|"$/g, ''));
+                return sessionKey;
+            } catch (error) {
+                console.error("Session Error:", error);
+                document.getElementById("errorDisplay").innerText = `Error starting session: ${error.message}`;
+                return null;
+            }
+        }
+
+        async function getCategoryEntries() {
+            const categoryId = curatedPhotoArchiveCategoryId;
+            console.log("Querying Category ID:", categoryId);
+
+            const ks = await startSession();
+            if (!ks) {
+                console.error("Session key not obtained.");
+                return;
+            }
+            console.log("Session Key:", ks);
+
+            document.getElementById("result").innerText = `Fetching photo entries for category ID: ${categoryId}...`;
+            const photoGrid = document.getElementById("photoGrid");
+            photoGrid.innerHTML = ''; // Clear previous photos
+            allPhotos = []; // Clear the array for the new category
+            currentPhotoIndex = 0; // Reset index when fetching new data
+
+            try {
+                const pager = {
+                    pageSize: 250,
+                    pageIndex: 1
+                };
+
+                let allFetchedPhotos = [];
+                let totalCount = 0;
+
+                const filter = [
+                    { field: "objectTypeEqual", value: "KalturaMediaEntryFilter" },
+                    { field: "categoryIdEqual", value: categoryId }, // Keep this for initial filtering
+                    { field: "mediaTypeEqual", value: 2 }
+                ];
+
+                let countFormData = new URLSearchParams({
+                    service: "media",
+                    action: "count",
+                    ks: ks,
+                    format: "1"
+                });
+                filter.forEach((item, index) => {
+                    countFormData.append(`filter:${index}:field`, item.field);
+                    countFormData.append(`filter:${index}:value`, item.value);
+                });
+                console.log("Count API Request Payload:", countFormData.toString());
+
+                const countResponse = await fetch(configBase.serviceUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: countFormData.toString()
+                });
+
+                if (!countResponse.ok) throw new Error(`Media count error! Status: ${response.status}`);
+                const countData = await countResponse.json();
+                totalCount = countData;
+                console.log("Total count of photos in category (from API):", totalCount);
+
+                while (allFetchedPhotos.length < totalCount) {
+                    const listFilter = [
+                        { field: "objectTypeEqual", value: "KalturaMediaEntryFilter" },
+                        { field: "categoryIdEqual", value: categoryId }, // Keep this for initial filtering
+                        { field: "mediaTypeEqual", value: 2 }
+                    ];
+
+                    const formData = new URLSearchParams({
+                        service: "media",
+                        action: "list",
+                        ks: ks,
+                        format: "1",
+                        // Removed orderBy here as we will sort client-side after filtering
+                        "pager:pageSize": pager.pageSize,
+                        "pager:pageIndex": pager.pageIndex
+                    });
+                    listFilter.forEach((item, index) => {
+                        formData.append(`filter:${index}:field`, item.field);
+                        formData.append(`filter:${index}:value`, item.value);
+                    });
+                    console.log("List API Request Payload (Page", pager.pageIndex, "):", formData.toString());
+
+                    const response = await fetch(configBase.serviceUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: formData.toString()
+                    });
+
+                    if (!response.ok) throw new Error(`Media list error (page ${pager.pageIndex})! Status: ${response.status}`);
+
+                    const data = await response.json();
+                    console.log(`Media List API Response (Photos - Page ${pager.pageIndex}):`, data);
+                    if (data.objects && data.objects.length > 0) {
+                        for (let i = 0; i < Math.min(5, data.objects.length); i++) {
+                            console.log(`Object ${i + 1} categories:`, data.objects[i].categories);
+                        }
+                        allFetchedPhotos = allFetchedPhotos.concat(data.objects);
+                        pager.pageIndex++;
+                    } else {
+                        break; // No more objects
+                    }
+                }
+
+                const filteredPhotos = allFetchedPhotos.filter(photo => {
+                    return photo.categories && photo.categories.includes("Curated Photo Archives");
+                });
+
+                totalPhotos = filteredPhotos.length;
+                // **Sort the filteredPhotos array by name**
+                filteredPhotos.sort((a, b) => {
+                    const nameA = a.name ? a.name.toUpperCase() : ''; // Ignore case
+                    const nameB = b.name ? b.name.toUpperCase() : ''; // Ignore case
+                    if (nameA < nameB) {
+                        return -1;
+                    }
+                    if (nameA > nameB) {
+                        return 1;
+                    }
+                    return 0; // names are equal
+                });
+                allPhotos = filteredPhotos; // Store the sorted and filtered photos
+                document.getElementById("result").innerText = `${totalPhotos} photo entries (after filtering by name). Click a thumbnail to open the player.`;
+                console.log("Total Photos Found (after filtering by name):", totalPhotos);
+                console.log("All Photos Array Before Display (after filtering by name and sorting):", allPhotos.map(photo => photo.name));
+                displayPhotosInGrid(allPhotos, photoGrid);
+                console.log("All Photos in Array (Ordered, after filtering by name):", allPhotos);
+
+            } catch (error) {
+                console.error("Get Category Entries Error:", error);
+                document.getElementById("result").innerText = `Error fetching photo entries: ${error.message}`;
+            }
+        }
+
+        function displayPhotosInGrid(photos, container) {
+            container.innerHTML = ''; // Clear the container before adding new photos
+            const fragment = document.createDocumentFragment(); // For better performance
+
+            photos.forEach((photo, index) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'photo-item';
+                itemDiv.style.cursor = 'pointer';
+                itemDiv.onclick = () => showPlayer(index); // Pass the index to showPlayer
+
+                const img = document.createElement('img');
+                img.src = photo.thumbnailUrl;
+                img.alt = photo.name || 'Photo';
+                img.style.maxWidth = '100%';
+                img.style.height = 'auto';
+
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'entry-name';
+                nameDiv.innerText = photo.name || 'Untitled'; // Display the entry name
+
+                itemDiv.appendChild(img);
+                itemDiv.appendChild(nameDiv); // Add the name to the item
+                fragment.appendChild(itemDiv);
+            });
+            container.appendChild(fragment);
+            document.getElementById("playerContainer").style.display = 'none'; // Ensure player container is hidden initially
+            document.getElementById("photoGrid").style.display = 'grid'; // Ensure grid is visible
+        }
+
+        async function embedPlayer(photo) {
+            const playerContainer = document.getElementById("playerContainer");
+            playerContainer.style.display = 'block';
+            const kalturaPlayerDiv = document.getElementById("kalturaPlayer");
+            kalturaPlayerDiv.innerHTML = ''; // Clear previous player
+
+            // Display asset name and category
+            const assetInfoDiv = document.getElementById("assetInfo");
+            assetInfoDiv.innerText = `Name: ${photo.name || 'N/A'}\nCategory: Curated Photo Archives`; // Assuming the category is always "Curated Photo Archives" based on your filtering
+
+            const iframe = document.createElement('iframe');
+            iframe.src = `https://cdnapisec.kaltura.com/p/${configBase.partnerId}/embedPlaykitJs/uiconf_id/${configBase.uiConfId}?iframeembed=true&entry_id=${photo.id}`;
+            iframe.width = '640'; // Adjust as needed
+            iframe.height = '360'; // Adjust as needed
+            iframe.allow = 'autoplay *; fullscreen *; encrypted-media *';
+            iframe.allowFullscreen = true;
+            iframe.webkitallowfullscreen = true;
+            iframe.mozallowfullscreen = true;
+
+            kalturaPlayerDiv.appendChild(iframe);
+        }
+
+        function showPlayer(index) {
+            if (allPhotos && allPhotos.length > 0 && index >= 0 && index < allPhotos.length) {
+                currentPhotoIndex = index;
+                document.getElementById("photoGrid").style.display = 'none'; // Hide the grid
+                embedPlayer(allPhotos[currentPhotoIndex]);
+                updateNavigationButtons();
+            }
+        }
+
+        function navigateBackward() {
+            if (currentPhotoIndex > 0) {
+                currentPhotoIndex--;
+                embedPlayer(allPhotos[currentPhotoIndex]);
+                updateNavigationButtons();
+            }
+        }
+
+        function navigateForward() {
+            if (currentPhotoIndex < allPhotos.length - 1) {
+                currentPhotoIndex++;
+                embedPlayer(allPhotos[currentPhotoIndex]);
+                updateNavigationButtons();
+            }
+        }
+
+        function updateNavigationButtons() {
+            document.getElementById("previousButton").disabled = currentPhotoIndex === 0;
+            document.getElementById("nextButton").disabled = currentPhotoIndex === allPhotos.length - 1;
+        }
+
+        function showGrid() {
+            document.getElementById("playerContainer").style.display = 'none';
+            document.getElementById("photoGrid").style.display = 'grid';
+        }
+
+        function startApp() {
+            const secretInput = document.getElementById("userSecret");
+            currentUserSecret = secretInput.value.trim();
+            document.getElementById("errorDisplay").innerText = ""; // Clear any previous errors
+
+            if (currentUserSecret) {
+                document.getElementById("credentialsForm").style.display = "none";
+                document.getElementById("contentArea").style.display = "block";
+                getCategoryEntries();
+            } else {
+                document.getElementById("errorDisplay").innerText = "Please enter the User Secret.";
+            }
+        }
+
+        // The getCategoryEntries will now be called after the user submits the secret.
+    </script>
+</body>
+</html>
