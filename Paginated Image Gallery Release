@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Gallery with Pagination</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #credentialsForm {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 300px;
+        }
+        #credentialsForm label {
+            font-weight: bold;
+        }
+        #credentialsForm input[type="text"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        #credentialsForm button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        #photoGrid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .photo-item {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .photo-item img {
+            max-width: 100%;
+            height: auto;
+            margin-bottom: 5px;
+        }
+        .photo-item .entry-name {
+            font-size: 0.9em;
+            word-break: break-word;
+        }
+        #playerContainer {
+            margin-top: 20px;
+            text-align: center;
+        }
+        #assetInfo {
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        #navigationButtons button {
+            padding: 8px 15px;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+        #backButton {
+            margin-top: 10px;
+            padding: 8px 15px;
+            cursor: pointer;
+        }
+        #contentArea {
+            display: none;
+        }
+        #errorDisplay {
+            color: red;
+            margin-top: 10px;
+        }
+        #paginationControls {
+            margin-top: 20px;
+            text-align: center;
+        }
+        #paginationControls button {
+            padding: 8px 12px;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+        .pagination-info {
+            margin: 10px 0;
+            font-size: 0.9em;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <h2>Image Gallery</h2>
+
+    <div id="credentialsForm">
+        <label for="userSecret">Access Code:</label>
+        <input type="text" id="userSecret" name="userSecret">
+        <button onclick="startApp()">Enter</button>
+        <div id="errorDisplay"></div>
+    </div>
+
+    <div id="contentArea" style="display:none;">
+        <div id="photoGrid">
+        </div>
+
+        <div id="paginationControls">
+            <button id="prevPage" onclick="prevPage()" disabled>Previous</button>
+            <span id="pageInfo" class="pagination-info"></span>
+            <button id="nextPage" onclick="nextPage()" disabled>Next</button>
+        </div>
+
+        <div id="playerContainer" style="display:none;">
+            <div id="assetInfo"></div>
+            <div id="kalturaPlayer"></div>
+            <div id="navigationButtons">
+                <button id="previousButton" onclick="navigateBackward()" disabled>Previous</button>
+                <button id="nextButton" onclick="navigateForward()" disabled>Next</button>
+            </div>
+            <button id="backButton" onclick="showGrid()">Back to Gallery</button>
+        </div>
+
+        <pre id="result"></pre>
+    </div>
+
+    <script>
+        const configBase = {
+            partnerId: "YOUR_PARTNER_ID", // Replace with your actual Partner ID
+            serviceUrl: "https://www.kaltura.com/api_v3/index.php",
+            uiConfId: "YOUR_UICONF_ID" // Replace with your UI Conf ID
+        };
+
+        let sessionKey = null;
+        let totalPhotos = 0;
+        const curatedPhotoArchiveCategoryId = "YOUR_CATEGORY_ID"; // Replace with your Category ID
+        let allPhotos = [];
+        let currentUserSecret = null;
+        let currentPhotoIndex = 0;
+        const photosPerPage = 100;
+        let currentPage = 1;
+
+        async function startSession() {
+            if (!currentUserSecret) {
+                throw new Error("User secret not provided.");
+            }
+            if (sessionKey) return sessionKey;
+            try {
+                const formData = new URLSearchParams({
+                    service: "session",
+                    action: "start",
+                    secret: currentUserSecret,
+                    userId: "your_user_id", // Replace
+                    type: "0",
+                    partnerId: configBase.partnerId,
+                    expiry: "86400",
+                    format: "1"
+                });
+
+                const response = await fetch(configBase.serviceUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: formData.toString()
+                });
+
+                if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+                sessionKey = await response.text().then(text => text.replace(/^"|"$/g, ''));
+                return sessionKey;
+            } catch (error) {
+                console.error("Session Error:", error);
+                document.getElementById("errorDisplay").innerText = `Error starting session: ${error.message}`;
+                return null;
+            }
+        }
+
+        async function getCategoryEntries() {
+            const categoryId = curatedPhotoArchiveCategoryId;
+            console.log("Querying Category ID:", categoryId);
+
+            const ks = await startSession();
+            if (!ks) {
+                console.error("Session key not obtained.");
+                return;
+            }
+            console.log("Session Key:", ks);
+
+            document.getElementById("result").innerText = `Fetching entries for category ID: ${categoryId}...`;
+            const photoGrid = document.getElementById("photoGrid");
+            photoGrid.innerHTML = '';
+            allPhotos = [];
+            currentPhotoIndex = 0;
+            currentPage = 1;
+
+            try {
+                const pager = {
+                    pageSize: 250,
+                    pageIndex: 1
+                };
+
+                let allFetchedPhotos = [];
+                let totalCount = 0;
+
+                const filter = [
+                    { field: "objectTypeEqual", value: "KalturaMediaEntryFilter" },
+                    { field: "categoryIdEqual", value: categoryId },
+                    { field: "mediaTypeEqual", value: 2 }
+                ];
+
+                let countFormData = new URLSearchParams({
+                    service: "media",
+                    action: "count",
+                    ks: ks,
+                    format: "1"
+                });
+                filter.forEach((item, index) => {
+                    countFormData.append(`filter:${index}:field`, item.field);
+                    countFormData.append(`filter:${index}:value`, item.value);
+                });
+                console.log("Count API Request Payload:", countFormData.toString());
+
+                const countResponse = await fetch(configBase.serviceUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: countFormData.toString()
+                });
+
+                if (!countResponse.ok) throw new Error(`Media count error! Status: ${response.status}`);
+                const countData = await countResponse.json();
+                totalCount = countData;
+                console.log("Total count of photos in category (from API):", totalCount);
+
+                while (allFetchedPhotos.length < totalCount) {
+                    const listFilter = [
+                        { field: "objectTypeEqual", value: "KalturaMediaEntryFilter" },
+                        { field: "categoryIdEqual", value: categoryId },
+                        { field: "mediaTypeEqual", value: 2 }
+                    ];
+
+                    const formData = new URLSearchParams({
+                        service: "media",
+                        action: "list",
+                        ks: ks,
+                        format: "1",
+                        "pager:pageSize": pager.pageSize,
+                        "pager:pageIndex": pager.pageIndex
+                    });
+                    listFilter.forEach((item, index) => {
+                        formData.append(`filter:${index}:field`, item.field);
+                        formData.append(`filter:${index}:value`, item.value);
+                    });
+                    console.log("List API Request Payload (Page", pager.pageIndex, "):", formData.toString());
+
+                    const response = await fetch(configBase.serviceUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: formData.toString()
+                    });
+
+                    if (!response.ok) throw new Error(`Media list error (page ${pager.pageIndex})! Status: ${response.status}`);
+
+                    const data = await response.json();
+                    console.log(`Media List API Response (Photos - Page ${pager.pageIndex}):`, data);
+                    if (data.objects && data.objects.length > 0) {
+                        for (let i = 0; i < Math.min(5, data.objects.length); i++) {
+                            console.log(`Object ${i + 1} categories:`, data.objects[i].categories);
+                        }
+                        allFetchedPhotos = allFetchedPhotos.concat(data.objects);
+                        pager.pageIndex++;
+                    } else {
+                        break;
+                    }
+                }
+
+                const filteredPhotos = allFetchedPhotos.filter(photo => {
+                    return photo.categories && photo.categories.includes("Curated Photo Archives");
+                });
+
+                totalPhotos = filteredPhotos.length;
+                filteredPhotos.sort((a, b) => {
+                    const nameA = a.name ? a.name.toUpperCase() : '';
+                    const nameB = b.name ? b.name.toUpperCase() : '';
+                    if (nameA < nameB) {
+                        return -1;
+                    }
+                    if (nameA > nameB) {
+                        return 1;
+                    }
+                    return 0;
+                });
+                allPhotos = filteredPhotos;
+                document.getElementById("result").innerText = `${totalPhotos} photo entries (after filtering by name). Click a thumbnail to open the player.`;
+                console.log("Total Photos Found (after filtering by name):", totalPhotos);
+                console.log("All Photos Array Before Display (after filtering by name and sorting):", allPhotos.map(photo => photo.name));
+                displayCurrentPage();
+                updatePaginationControls();
+                console.log("All Photos in Array (Ordered, after filtering by name):", allPhotos);
+
+            } catch (error) {
+                console.error("Get Category Entries Error:", error);
+                document.getElementById("result").innerText = `Error fetching photo entries: ${error.message}`;
+            }
+        }
+
+        function displayCurrentPage() {
+            const startIndex = (currentPage - 1) * photosPerPage;
+            const endIndex = Math.min(startIndex + photosPerPage, allPhotos.length);
+            const photosToDisplay = allPhotos.slice(startIndex, endIndex);
+            displayPhotosInGrid(photosToDisplay, document.getElementById("photoGrid"));
+            updatePaginationControls();
+        }
+
+        function displayPhotosInGrid(photos, container) {
+            container.innerHTML = '';
+            const fragment = document.createDocumentFragment();
+
+            photos.forEach((photo, index) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'photo-item';
+                itemDiv.style.cursor = 'pointer';
+                itemDiv.onclick = () => showPlayer(allPhotos.indexOf(photo));
+
+                const img = document.createElement('img');
+                img.src = photo.thumbnailUrl;
+                img.alt = photo.name || 'Photo';
+                img.style.maxWidth = '100%';
+                img.style.height = 'auto';
+
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'entry-name';
+                nameDiv.innerText = photo.name || 'Untitled';
+
+                itemDiv.appendChild(img);
+                itemDiv.appendChild(nameDiv);
+                fragment.appendChild(itemDiv);
+            });
+            container.appendChild(fragment);
+            document.getElementById("playerContainer").style.display = 'none';
+            document.getElementById("photoGrid").style.display = 'grid';
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                displayCurrentPage();
+            }
+        }
+
+        function nextPage() {
+            const totalPages = Math.ceil(allPhotos.length / photosPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                displayCurrentPage();
+            }
+        }
+
+        function updatePaginationControls() {
+            const totalPages = Math.ceil(allPhotos.length / photosPerPage);
+            const pageInfo = document.getElementById("pageInfo");
+            const prevButton = document.getElementById("prevPage");
+            const nextButton = document.getElementById("nextPage");
+
+            pageInfo.innerText = `Page ${currentPage} of ${totalPages}`;
+            prevButton.disabled = currentPage === 1;
+            nextButton.disabled = currentPage === totalPages || totalPages === 0;
+        }
+
+        async function embedPlayer(photo) {
+            const playerContainer = document.getElementById("playerContainer");
+            playerContainer.style.display = 'block';
+            const kalturaPlayerDiv = document.getElementById("kalturaPlayer");
+            kalturaPlayerDiv.innerHTML = '';
+
+            const assetInfoDiv = document.getElementById("assetInfo");
+            assetInfoDiv.innerText = `Name: ${photo.name || 'N/A'}\nCategory: Curated Photo Archives`;
+
+            const iframe = document.createElement('iframe');
+            iframe.src = `https://cdnapisec.kaltura.com/p/${configBase.partnerId}/embedPlaykitJs/uiconf_id/${configBase.uiConfId}?iframeembed=true&entry_id=${photo.id}`;
+            iframe.width = '640';
+            iframe.height = '360';
+            iframe.allow = 'autoplay *; fullscreen *; encrypted-media *';
+            iframe.allowFullscreen = true;
+            iframe.webkitallowfullscreen = true;
+            iframe.mozallowfullscreen = true;
+
+            kalturaPlayerDiv.appendChild(iframe);
+        }
+
+        function showPlayer(index) {
+            if (allPhotos && allPhotos.length > 0 && index >= 0 && index < allPhotos.length) {
+                currentPhotoIndex = index;
+                document.getElementById("photoGrid").style.display = 'none';
+                document.getElementById("paginationControls").style.display = 'none';
+                embedPlayer(allPhotos[currentPhotoIndex]);
+                updateNavigationButtons();
+            }
+        }
+
+        function navigateBackward() {
+            if (currentPhotoIndex > 0) {
+                currentPhotoIndex--;
+                embedPlayer(allPhotos[currentPhotoIndex]);
+                updateNavigationButtons();
+            }
+        }
+
+        function navigateForward() {
+            if (currentPhotoIndex < allPhotos.length - 1) {
+                currentPhotoIndex++;
+                embedPlayer(allPhotos[currentPhotoIndex]);
+                updateNavigationButtons();
+            }
+        }
+
+        function updateNavigationButtons() {
+            document.getElementById("previousButton").disabled = currentPhotoIndex === 0;
+            document.getElementById("nextButton").disabled = currentPhotoIndex === allPhotos.length - 1;
+        }
+
+        function showGrid() {
+            document.getElementById("playerContainer").style.display = 'none';
+            document.getElementById("photoGrid").style.display = 'grid';
+            document.getElementById("paginationControls").style.display = 'flex';
+            updatePaginationControls();
+        }
+
+        function startApp() {
+            const secretInput = document.getElementById("userSecret");
+            currentUserSecret = secretInput.value.trim();
+            document.getElementById("errorDisplay").innerText = "";
+
+            if (currentUserSecret) {
+                document.getElementById("credentialsForm").style.display = "none";
+                document.getElementById("contentArea").style.display = "block";
+                getCategoryEntries();
+            } else {
+                document.getElementById("errorDisplay").innerText = "Please enter the Access Code.";
+            }
+        }
+    </script>
+</body>
+</html>
