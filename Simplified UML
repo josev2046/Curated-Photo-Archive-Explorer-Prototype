@@ -1,0 +1,28 @@
+@startuml
+participant "HTML Page" as Page
+participant "JavaScript" as JS
+participant "DAM API" as DAM_API
+
+Page -> JS: Start App
+alt Secret Code OK
+    JS -> DAM_API: Authenticate -->> JS: Token
+    JS -> DAM_API: Get Media Count -->> JS: Count
+    loop Get Media Details
+        JS -> DAM_API: Get Media List -->> JS: Media Data
+        JS -> JS: Store Data
+    end
+    JS -> Page: Show Thumbnails
+    Page -> JS: Select Thumbnail
+    JS -> DAM_API: Get Media URL -->> JS: Media URL
+    JS -> Page: Show Media
+    group Navigation
+        Page -> JS: Previous/Next
+        JS -> DAM_API: Get Media URL -->> JS: Media URL
+        JS -> Page: Show Media
+    end
+    Page -> JS: Back to Gallery
+    JS -> Page: Show Thumbnails
+else Secret Code Failed
+    JS -> Page: Show Error
+end
+@enduml
