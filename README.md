@@ -1,2 +1,2 @@
 # Curated-Photo-Archive-Explorer-Prototype
-A web-based prototype for exploring a curated digital archive of photographic assets.
+A web-based prototype for exploring a curated digital archive of photographic assets. The code fetches a curated list of photos and their metadata from a Digital Asset Manager (DAM), displays them in a user-friendly grid with names, and allows users to view individual photos using an embedded media player with navigation. In this iteration, the primary API methods used are Kaltura's `media.count`, and `media.list` for data retrieval, and the embed URL structure for displaying the photos via the media player.
