@@ -34,26 +34,26 @@
         }
         #photoGrid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); /* Responsive grid */
+            gap: 20px; /* Increased gap for better spacing */
             margin-top: 20px;
         }
         .photo-item {
             border: 1px solid #ccc;
-            padding: 10px;
+            padding: 10px; /* Increased padding */
             text-align: center;
             display: flex;
-            flex-direction: column;
-            align-items: center;
+            flex-direction: column; /* Stack image and text */
+            align-items: center; /* Center items horizontally */
         }
         .photo-item img {
             max-width: 100%;
             height: auto;
-            margin-bottom: 5px;
+            margin-bottom: 5px; /* Space between image and text */
         }
         .photo-item .entry-name {
             font-size: 0.9em;
-            word-break: break-word;
+            word-break: break-word; /* Prevent long names from breaking layout */
         }
         #playerContainer {
             margin-top: 20px;
@@ -74,7 +74,7 @@
             cursor: pointer;
         }
         #contentArea {
-            display: none;
+            display: none; /* Initially hide the main content area */
         }
         #errorDisplay {
             color: red;
@@ -142,7 +142,7 @@
         let allPhotos = [];
         let currentUserSecret = null;
         let currentPhotoIndex = 0;
-        const photosPerPage = 100;
+        const photosPerPage = 250;
         let currentPage = 1;
 
         async function startSession() {
@@ -190,12 +190,12 @@
             }
             console.log("Session Key:", ks);
 
-            document.getElementById("result").innerText = `Fetching entries for category ID: ${categoryId}...`;
+            document.getElementById("result").innerText = `Fetching photo entries for category ID: ${categoryId}...`;
             const photoGrid = document.getElementById("photoGrid");
-            photoGrid.innerHTML = '';
-            allPhotos = [];
-            currentPhotoIndex = 0;
-            currentPage = 1;
+            photoGrid.innerHTML = ''; // Clear previous photos
+            allPhotos = []; // Clear the array for the new category
+            currentPhotoIndex = 0; // Reset index when fetching new data
+            currentPage = 1; // Reset to the first page
 
             try {
                 const pager = {
@@ -208,7 +208,7 @@
 
                 const filter = [
                     { field: "objectTypeEqual", value: "KalturaMediaEntryFilter" },
-                    { field: "categoryIdEqual", value: categoryId },
+                    { field: "categoryIdEqual", value: categoryId }, // Keep this for initial filtering
                     { field: "mediaTypeEqual", value: 2 }
                 ];
 
@@ -238,7 +238,7 @@
                 while (allFetchedPhotos.length < totalCount) {
                     const listFilter = [
                         { field: "objectTypeEqual", value: "KalturaMediaEntryFilter" },
-                        { field: "categoryIdEqual", value: categoryId },
+                        { field: "categoryIdEqual", value: categoryId }, // Keep this for initial filtering
                         { field: "mediaTypeEqual", value: 2 }
                     ];
 
@@ -247,6 +247,7 @@
                         action: "list",
                         ks: ks,
                         format: "1",
+                        // Removed orderBy here as we will sort client-side after filtering
                         "pager:pageSize": pager.pageSize,
                         "pager:pageIndex": pager.pageIndex
                     });
@@ -273,7 +274,7 @@
                         allFetchedPhotos = allFetchedPhotos.concat(data.objects);
                         pager.pageIndex++;
                     } else {
-                        break;
+                        break; // No more objects
                     }
                 }
 
@@ -282,22 +283,23 @@
                 });
 
                 totalPhotos = filteredPhotos.length;
+                // **Sort the filteredPhotos array by name**
                 filteredPhotos.sort((a, b) => {
-                    const nameA = a.name ? a.name.toUpperCase() : '';
-                    const nameB = b.name ? b.name.toUpperCase() : '';
+                    const nameA = a.name ? a.name.toUpperCase() : ''; // Ignore case
+                    const nameB = b.name ? b.name.toUpperCase() : ''; // Ignore case
                     if (nameA < nameB) {
                         return -1;
                     }
                     if (nameA > nameB) {
                         return 1;
                     }
-                    return 0;
+                    return 0; // names are equal
                 });
-                allPhotos = filteredPhotos;
+                allPhotos = filteredPhotos; // Store the sorted and filtered photos
                 document.getElementById("result").innerText = `${totalPhotos} photo entries (after filtering by name). Click a thumbnail to open the player.`;
                 console.log("Total Photos Found (after filtering by name):", totalPhotos);
                 console.log("All Photos Array Before Display (after filtering by name and sorting):", allPhotos.map(photo => photo.name));
-                displayCurrentPage();
+                displayCurrentPage(); // Display the first page of photos
                 updatePaginationControls();
                 console.log("All Photos in Array (Ordered, after filtering by name):", allPhotos);
 
@@ -316,14 +318,14 @@
         }
 
         function displayPhotosInGrid(photos, container) {
-            container.innerHTML = '';
-            const fragment = document.createDocumentFragment();
+            container.innerHTML = ''; // Clear the container before adding new photos
+            const fragment = document.createDocumentFragment(); // For better performance
 
             photos.forEach((photo, index) => {
                 const itemDiv = document.createElement('div');
                 itemDiv.className = 'photo-item';
                 itemDiv.style.cursor = 'pointer';
-                itemDiv.onclick = () => showPlayer(allPhotos.indexOf(photo));
+                itemDiv.onclick = () => showPlayer(allPhotos.indexOf(photo)); // Get the original index
 
                 const img = document.createElement('img');
                 img.src = photo.thumbnailUrl;
@@ -333,15 +335,15 @@
 
                 const nameDiv = document.createElement('div');
                 nameDiv.className = 'entry-name';
-                nameDiv.innerText = photo.name || 'Untitled';
+                nameDiv.innerText = photo.name || 'Untitled'; // Display the entry name
 
                 itemDiv.appendChild(img);
-                itemDiv.appendChild(nameDiv);
+                itemDiv.appendChild(nameDiv); // Add the name to the item
                 fragment.appendChild(itemDiv);
             });
             container.appendChild(fragment);
-            document.getElementById("playerContainer").style.display = 'none';
-            document.getElementById("photoGrid").style.display = 'grid';
+            document.getElementById("playerContainer").style.display = 'none'; // Ensure player container is hidden initially
+            document.getElementById("photoGrid").style.display = 'grid'; // Ensure grid is visible
         }
 
         function prevPage() {
@@ -374,15 +376,16 @@
             const playerContainer = document.getElementById("playerContainer");
             playerContainer.style.display = 'block';
             const kalturaPlayerDiv = document.getElementById("kalturaPlayer");
-            kalturaPlayerDiv.innerHTML = '';
+            kalturaPlayerDiv.innerHTML = ''; // Clear previous player
 
+            // Display asset name and category
             const assetInfoDiv = document.getElementById("assetInfo");
-            assetInfoDiv.innerText = `Name: ${photo.name || 'N/A'}\nCategory: Curated Photo Archives`;
+            assetInfoDiv.innerText = `Name: ${photo.name || 'N/A'}\\nCategory: Curated Photo Archives`; // Assuming the category is always "Curated Photo Archives" based on your filtering
 
             const iframe = document.createElement('iframe');
-            iframe.src = `https://cdnapisec.kaltura.com/p/${configBase.partnerId}/embedPlaykitJs/uiconf_id/${configBase.uiConfId}?iframeembed=true&entry_id=${photo.id}`;
-            iframe.width = '640';
-            iframe.height = '360';
+            iframe.src = `https://cdnapisec.kaltura.com/p/${configBase.partnerId}/embedPlaykitJs/uiconf_id/${configBase.uiConfId}?iframeembed=true&entry_id=${photo.id}`;  // Corrected line
+            iframe.width = '640'; // Adjust as needed
+            iframe.height = '360'; // Adjust as needed
             iframe.allow = 'autoplay *; fullscreen *; encrypted-media *';
             iframe.allowFullscreen = true;
             iframe.webkitallowfullscreen = true;
@@ -394,8 +397,8 @@
         function showPlayer(index) {
             if (allPhotos && allPhotos.length > 0 && index >= 0 && index < allPhotos.length) {
                 currentPhotoIndex = index;
-                document.getElementById("photoGrid").style.display = 'none';
-                document.getElementById("paginationControls").style.display = 'none';
+                document.getElementById("photoGrid").style.display = 'none'; // Hide the grid
+                document.getElementById("paginationControls").style.display = 'none'; // Hide pagination
                 embedPlayer(allPhotos[currentPhotoIndex]);
                 updateNavigationButtons();
             }
@@ -425,21 +428,21 @@
         function showGrid() {
             document.getElementById("playerContainer").style.display = 'none';
             document.getElementById("photoGrid").style.display = 'grid';
-            document.getElementById("paginationControls").style.display = 'flex';
-            updatePaginationControls();
+            document.getElementById("paginationControls").style.display = 'flex'; // Or 'block' depending on desired layout
+            updatePaginationControls(); // Ensure pagination controls are updated when returning to grid
         }
 
         function startApp() {
             const secretInput = document.getElementById("userSecret");
             currentUserSecret = secretInput.value.trim();
-            document.getElementById("errorDisplay").innerText = "";
+            document.getElementById("errorDisplay").innerText = ""; // Clear any previous errors
 
             if (currentUserSecret) {
                 document.getElementById("credentialsForm").style.display = "none";
                 document.getElementById("contentArea").style.display = "block";
                 getCategoryEntries();
             } else {
-                document.getElementById("errorDisplay").innerText = "Please enter the Access Code.";
+                document.getElementById("errorDisplay").innerText = "Please enter the User Secret.";
             }
         }
     </script>
